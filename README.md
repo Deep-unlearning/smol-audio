@@ -3,7 +3,7 @@
 Practical notebooks for shrinking, optimizing, and customizing audio AI models with the Hugging Face ecosystem.
 
 ### Latest examples
-- Dialogue TTS with Dia-1.6B
+- Granite Speech 4.0 1b ASR
 
 > [!NOTE]
 > GitHub doesn't always render notebooks well. If you have trouble viewing them, try opening in Colab using the links below.
