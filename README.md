@@ -11,10 +11,6 @@ Practical notebooks for shrinking, optimizing, and customizing audio AI models w
 | Category | Notebook | Description |
 |----------|----------|-------------|
 | ASR Fine-tuning | [Fine-tune Whisper](Fine_tune_Whisper.ipynb) | Fine-tune Whisper on a custom language/domain using transformers + datasets |
-| Quantization/ONNX | [Quantize Whisper with Optimum](Quantize_Whisper_with_Optimum.ipynb) | Export Whisper to ONNX and quantize with Optimum |
-| TTS Inference | [Dia TTS](Dia_TTS_Inference.ipynb) | Generate realistic dialogue speech with Dia-1.6B |
-| Speech-to-Speech | [Speech-to-Speech Pipeline](Speech_to_Speech_Pipeline.ipynb) | End-to-end pipeline combining ASR + TTS (Whisper + Parler-TTS) |
 | Audio Captioning | [Fine-tune Audio Flamingo 3](Fine_tune_Audio_Flamingo_3.ipynb) | Fine-tune Audio Flamingo 3 for audio captioning (full + LoRA) |
 | ASR Fine-tuning | [Fine-tune Parakeet](Fine_tune_Parakeet.ipynb) | Fine-tune NVIDIA Parakeet CTC for speech recognition (full + LoRA) |
 | ASR Fine-tuning | [Fine-tune Voxtral ASR](Fine_tune_Voxtral_ASR.ipynb) | Fine-tune Voxtral for ASR with prompt masking (full + LoRA) |
-| TTS Fine-tuning | [Fine-tune Dia TTS](Fine_tune_Dia_TTS.ipynb) | Fine-tune Dia 1.6B on multi-speaker conversational data |
