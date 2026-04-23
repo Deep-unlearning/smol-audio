@@ -1,4 +1,8 @@
-# 🔊 Smol Audio
+<p align="center">
+  <img src="image.png" alt="Smol Audio" />
+</p>
+
+# Smol Audio 🔊
 
 Practical notebooks for shrinking, optimizing, and customizing audio AI models with the Hugging Face ecosystem.
 
@@ -15,3 +19,4 @@ Practical notebooks for shrinking, optimizing, and customizing audio AI models w
 | Audio Captioning | [Fine-tune Audio Flamingo 3](Fine_tune_Audio_Flamingo_3.ipynb) | Fine-tune Audio Flamingo 3 for audio captioning (full + LoRA) |
 | ASR Fine-tuning | [Fine-tune Parakeet](Fine_tune_Parakeet.ipynb) | Fine-tune NVIDIA Parakeet CTC for speech recognition (full + LoRA) |
 | ASR Fine-tuning | [Fine-tune Voxtral ASR](Fine_tune_Voxtral_ASR.ipynb) | Fine-tune Voxtral for ASR with prompt masking (full + LoRA) |
+| Multimodal | [Inference with PE-AV-Base](Inference_PE_AV_Base.ipynb) | Zero-shot video classification and audio↔text retrieval (AudioCaps) with Meta's Perception Encoder for Audio-Video |
