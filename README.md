@@ -7,6 +7,8 @@
 Practical notebooks for shrinking, optimizing, and customizing audio AI models with the Hugging Face ecosystem.
 
 ### Latest examples
+- Inference with Perception Encoder for Audio-Video (PE-AV)
+- Fine-tune Audio Flamingo 3
 - Granite Speech 4.0 1b ASR
 
 > [!NOTE]
