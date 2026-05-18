@@ -61,7 +61,7 @@ Change two things:
 
 ## Hardware
 
-The full 3000-step Italian config in `config_yodas_it.yaml` is sized for an 80 GB A100 / H100. Lower `per_device_train_batch_size`, increase `gradient_accumulation_steps`, and keep `gradient_checkpointing: true` if you have less memory.
+The full 3000-step Italian config in `config_yodas_it.yaml` is sized for an 80 GB A100 / H100. It can also fit on a 16 GB T4 with a lower `per_device_train_batch_size`, higher `gradient_accumulation_steps`, and `gradient_checkpointing: true`.
 
 ## Naming note
 
