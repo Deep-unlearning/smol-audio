@@ -61,7 +61,7 @@ Change two things:
 
 ## Hardware
 
-Smoke runs work on a single 16 GB GPU. The full 3000-step Italian config in `config_yodas_it.yaml` is sized for an 80 GB A100 / H100. Lower `per_device_train_batch_size`, increase `gradient_accumulation_steps`, and keep `gradient_checkpointing: true` if you have less memory.
+The full 3000-step Italian config in `config_yodas_it.yaml` is sized for an 80 GB A100 / H100. Lower `per_device_train_batch_size`, increase `gradient_accumulation_steps`, and keep `gradient_checkpointing: true` if you have less memory.
 
 ## Naming note
 
