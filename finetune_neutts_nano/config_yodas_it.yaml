@@ -1,0 +1,30 @@
+save_root: ./runs/neutts-official-yodas-300k-5s30s
+run_name: yodas-300k-5s30s-official-trainer-it-b128-gc
+
+restore_from: neuphonic/neutts-nano
+dataset: Steveeeeeeen/yodas-granary-it-neucodec-300k-5s30s
+split: train
+
+phonemizer_lang: it
+language_token: ""
+max_seq_len: 2048
+
+lr: 2e-5
+max_steps: 3000
+per_device_train_batch_size: 128
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+warmup_ratio: 0.03
+
+save_steps: 500
+logging_steps: 25
+save_total_limit: 2
+dataloader_num_workers: 8
+preprocess_num_proc: 8
+torch_compile: false
+bf16: true
+report_to: none
+
+# Optional: uncomment to upload the final model after training.
+# hub_model_id: <your-user>/neutts-yodas-300k-5s30s-official-trainer-it
+# hub_private: true
