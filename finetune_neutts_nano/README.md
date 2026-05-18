@@ -11,8 +11,8 @@ The recipe is language-agnostic. Italian is used as the worked example because t
 | [`Fine_tune_NeuTTS_Nano_New_Language.ipynb`](Fine_tune_NeuTTS_Nano_New_Language.ipynb) | The tutorial. Self-contained, Colab-friendly. Unpacks phonemization, the chat template, label masking, and SFTTrainer setup. |
 | [`finetune_neutts_nano.py`](finetune_neutts_nano.py) | Production CLI: reads an OmegaConf YAML, runs the same flow as the notebook, optionally pushes the checkpoint to the Hub. |
 | [`encode_dataset.py`](encode_dataset.py) | Minimal CLI: source dataset with text + audio columns → NeuCodec tokens → `text` + `codes` dataset saved locally or pushed to the Hub. |
-| [`generate_samples.py`](generate_samples.py) | Slim voice-clone inference CLI. Uses the same prompt format as the trainer so training and inference distributions match. |
-| [`config_yodas_it.yaml`](config_yodas_it.yaml) | Example training config (Italian on YODAS-Granary). Mirror of `../configs/neutts_official_trainer_yodas_it.yaml`. |
+| [`generate_samples.py`](generate_samples.py) | Slim voice-clone inference CLI using Neuphonic's official `neutts.NeuTTS` engine. |
+| [`config_yodas_it.yaml`](config_yodas_it.yaml) | Example training config matching the validated 300k Italian YODAS-Granary run. |
 
 ## Typical pipeline
 
@@ -27,9 +27,10 @@ python finetune_neutts_nano.py config_yodas_it.yaml
 
 # 3. Generate voice-cloned samples from the trained checkpoint.
 python generate_samples.py \
-    --model-checkpoint ./runs/yodas-150k-official-trainer-it \
+    --model-checkpoint ./runs/neutts-official-yodas-300k-5s30s/yodas-300k-5s30s-official-trainer-it-b128-gc \
     --encoded-dataset <your-user>/granary-it-neucodec \
-    --phonemizer-lang it \
+    --reference-index 0 \
+    --language it \
     --prompts "Ciao mondo." "Oggi piove molto."
 ```
 

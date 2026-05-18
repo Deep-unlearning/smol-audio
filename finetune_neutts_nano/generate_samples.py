@@ -1,15 +1,16 @@
-"""Generate voice-cloned samples from a fine-tuned NeuTTS Nano checkpoint.
+"""Generate voice-cloned samples with Neuphonic's official NeuTTS engine.
 
-Pairs with `finetune_neutts_nano.py`: uses the same phonemizer setup,
-chat-template grammar, and (optional) language token, so the inference prompt
-exactly matches the training distribution.
+This script intentionally uses `neutts.NeuTTS(...).infer(...)`, the same
+official inference path used for the 100-sample WER comparison. It avoids
+manually constructing chat prompts, calling `AutoModelForCausalLM.generate`,
+or decoding speech tokens by hand.
 
 Example:
     python generate_samples.py \
-        --model-checkpoint ./runs/yodas-150k-official-trainer-it \
-        --encoded-dataset Steveeeeeeen/yodas-granary-it-neucodec-150k \
+        --model-checkpoint ./runs/neutts-official-yodas-300k-5s30s/yodas-300k-5s30s-official-trainer-it-b128-gc \
+        --encoded-dataset Steveeeeeeen/yodas-granary-it-neucodec-300k-5s30s \
         --reference-index 0 \
-        --phonemizer-lang it --language-token "" \
+        --language it \
         --prompts "Ciao mondo." "Oggi piove molto." \
         --output-dir ./samples
 """
@@ -17,85 +18,73 @@ Example:
 from __future__ import annotations
 
 import argparse
-import re
+import json
+import shutil
 from pathlib import Path
 
-import phonemizer
+import numpy as np
 import soundfile as sf
 import torch
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-NEUCODEC_SAMPLE_RATE = 24_000
-SPEECH_TOKEN_RE = re.compile(r"<\|speech_(\d+)\|>")
+from neutts import NeuTTS
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model-checkpoint", required=True, help="Path or Hub id of the fine-tuned model.")
     parser.add_argument("--codec-checkpoint", default="neuphonic/neucodec")
-    parser.add_argument("--encoded-dataset", required=True, help="Dataset with `text` + `codes` to source the reference voice.")
+    parser.add_argument("--encoded-dataset", help="Dataset with `text` + `codes` to source the reference voice.")
     parser.add_argument("--reference-split", default="train")
     parser.add_argument("--reference-index", type=int, default=0)
-    parser.add_argument("--phonemizer-lang", default="it", help="eSpeak language code (matches training config).")
-    parser.add_argument("--language-token", default="", help='Special token to prepend, e.g. "<|IT|>". Empty if model was not trained with one.')
+    parser.add_argument("--reference-audio-path", help="Optional WAV/FLAC reference instead of --encoded-dataset.")
+    parser.add_argument("--reference-text", help="Reference transcript. Required with --reference-audio-path.")
     parser.add_argument("--prompts", nargs="+", required=True, help="One or more target texts to synthesize.")
     parser.add_argument("--output-dir", default="./samples")
-    parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("--temperature", type=float, default=0.9)
-    parser.add_argument("--top-k", type=int, default=50)
-    parser.add_argument("--min-new-tokens", type=int, default=50)
-    parser.add_argument("--max-new-tokens", type=int, default=900)
-    parser.add_argument("--max-seq-length", type=int, default=2048)
+    parser.add_argument("--language", default="it")
+    parser.add_argument("--backbone-device", default="cuda")
+    parser.add_argument("--codec-device", default="cuda")
     return parser.parse_args()
 
 
-def build_phonemizer(language: str):
-    return phonemizer.backend.EspeakBackend(
-        language=language,
-        preserve_punctuation=True,
-        with_stress=True,
-        words_mismatch="ignore",
-        language_switch="remove-flags",
-    )
+def codes_to_text(codes: torch.Tensor) -> str:
+    return "".join(f"<|speech_{int(code)}|>" for code in codes.view(-1).tolist())
 
 
-def phonemize(g2p, text: str) -> str:
-    phones = g2p.phonemize([text])
-    if not phones or not phones[0]:
-        raise ValueError(f"Empty phonemization for text={text!r}")
-    return " ".join(phones[0].split())
+def audio_stats(wav, sample_rate: int) -> dict:
+    arr = np.asarray(wav, dtype=np.float64)
+    return {
+        "sample_rate": sample_rate,
+        "duration_s": float(len(arr) / sample_rate),
+        "mean_abs": float(np.mean(np.abs(arr))) if len(arr) else 0.0,
+        "rms": float(np.sqrt(np.mean(arr * arr))) if len(arr) else 0.0,
+        "peak": float(np.max(np.abs(arr))) if len(arr) else 0.0,
+    }
 
 
-def build_voice_clone_prompt(tokenizer, ref_phonemes: str, target_phonemes: str, ref_codes: list[int], language_token: str) -> torch.Tensor:
-    prompt_text = f"{ref_phonemes} {target_phonemes}"
-    if language_token:
-        prompt_text = f"{language_token} {prompt_text}"
-    speech_token_text = "".join(f"<|speech_{idx}|>" for idx in ref_codes)
-    template = (
-        f"user: Convert the text to speech:<|TEXT_PROMPT_START|>{prompt_text}<|TEXT_PROMPT_END|>\n"
-        f"assistant:<|SPEECH_GENERATION_START|>{speech_token_text}"
-    )
-    ids = tokenizer.encode(template)
-    return torch.tensor(ids, dtype=torch.long).unsqueeze(0)
+def load_reference(args: argparse.Namespace, tts: NeuTTS, output_dir: Path):
+    reference_audio_path = output_dir / "reference.wav"
 
+    if args.encoded_dataset:
+        dataset = load_dataset(args.encoded_dataset, split=args.reference_split)
+        sample = dataset[args.reference_index]
+        ref_text = args.reference_text or sample["text"]
+        ref_codes = torch.tensor(sample["codes"], dtype=torch.long).view(-1)
+        ref_wav = tts._decode(codes_to_text(ref_codes))
+        sf.write(reference_audio_path, ref_wav, tts.sample_rate)
+        return ref_codes, ref_text, reference_audio_path, {
+            "encoded_dataset": args.encoded_dataset,
+            "reference_split": args.reference_split,
+            "reference_index": args.reference_index,
+        }
 
-def extract_speech_ids(tokenizer, token_ids: list[int], speech_end_id: int) -> list[int]:
-    out: list[int] = []
-    for tid in token_ids:
-        if tid == speech_end_id:
-            break
-        piece = tokenizer.convert_ids_to_tokens(int(tid))
-        match = SPEECH_TOKEN_RE.match(piece)
-        if match:
-            out.append(int(match.group(1)))
-    return out
+    if not args.reference_audio_path or not args.reference_text:
+        raise ValueError("Provide --encoded-dataset or --reference-audio-path with --reference-text.")
 
-
-def decode_codes_to_wav(codec, codes: list[int], device: torch.device):
-    codes_tensor = torch.tensor(codes, dtype=torch.long, device=device).view(1, 1, -1)
-    with torch.no_grad():
-        return codec.decode_code(codes_tensor).detach().cpu().squeeze().float().numpy()
+    shutil.copyfile(args.reference_audio_path, reference_audio_path)
+    ref_codes = tts.encode_reference(reference_audio_path)
+    return ref_codes, args.reference_text, reference_audio_path, {
+        "source_reference_audio_path": args.reference_audio_path,
+    }
 
 
 def main() -> None:
@@ -103,67 +92,48 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.bfloat16 if device.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float32
-    print(f"Device: {device}; dtype: {dtype}")
+    tts = NeuTTS(
+        backbone_repo=args.model_checkpoint,
+        backbone_device=args.backbone_device,
+        codec_repo=args.codec_checkpoint,
+        codec_device=args.codec_device,
+        language=args.language,
+    )
+    ref_codes, ref_text, reference_audio_path, reference_meta = load_reference(args, tts, output_dir)
 
-    print(f"Loading reference row {args.reference_split}[{args.reference_index}] from {args.encoded_dataset} ...")
-    row = load_dataset(args.encoded_dataset, split=args.reference_split)[args.reference_index]
-    ref_text, ref_codes = row["text"], [int(c) for c in row["codes"]]
-
-    print(f"Loading tokenizer + model from {args.model_checkpoint} ...")
-    tokenizer = AutoTokenizer.from_pretrained(args.model_checkpoint)
-    model = AutoModelForCausalLM.from_pretrained(args.model_checkpoint, torch_dtype=dtype).to(device).eval()
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    print("Loading NeuCodec ...")
-    from neucodec import NeuCodec
-    codec = NeuCodec.from_pretrained(args.codec_checkpoint).eval().to(device)
-
-    g2p = build_phonemizer(args.phonemizer_lang)
-    ref_phonemes = phonemize(g2p, ref_text)
-    speech_end_id = tokenizer.convert_tokens_to_ids("<|SPEECH_GENERATION_END|>")
-
-    print(f"Reference text: {ref_text!r}")
-    print(f"Reference codec tokens: {len(ref_codes)}")
-
-    for idx, target_text in enumerate(args.prompts, start=1):
-        torch.manual_seed(args.seed + idx - 1)
-        if device.type == "cuda":
-            torch.cuda.manual_seed_all(args.seed + idx - 1)
-
-        target_phonemes = phonemize(g2p, target_text)
-        input_ids = build_voice_clone_prompt(
-            tokenizer, ref_phonemes, target_phonemes, ref_codes, args.language_token
-        ).to(device)
-
-        max_length = min(args.max_seq_length, input_ids.shape[-1] + args.max_new_tokens)
-        if max_length <= input_ids.shape[-1]:
-            raise ValueError(f"Prompt is {input_ids.shape[-1]} tokens, already over max_seq_length={args.max_seq_length}.")
-
-        with torch.no_grad():
-            output = model.generate(
-                input_ids,
-                max_length=max_length,
-                min_new_tokens=args.min_new_tokens,
-                do_sample=True,
-                temperature=args.temperature,
-                top_k=args.top_k,
-                eos_token_id=speech_end_id,
-                pad_token_id=tokenizer.pad_token_id,
-                use_cache=True,
-            )
-
-        new_tokens = output[0, input_ids.shape[-1]:].detach().cpu().tolist()
-        speech_ids = extract_speech_ids(tokenizer, new_tokens, speech_end_id)
-        if not speech_ids:
-            raise RuntimeError(f"Sample {idx} produced no <|speech_*|> tokens.")
-
-        wav = decode_codes_to_wav(codec, speech_ids, device)
+    results = []
+    for idx, prompt in enumerate(args.prompts, start=1):
+        with torch.inference_mode():
+            wav = tts.infer(prompt, ref_codes, ref_text)
         audio_path = output_dir / f"sample_{idx:02d}.wav"
-        sf.write(audio_path, wav, NEUCODEC_SAMPLE_RATE)
-        print(f"[{idx}] '{target_text}' -> {audio_path} ({len(wav) / NEUCODEC_SAMPLE_RATE:.2f}s, {len(speech_ids)} codec tokens)")
+        sf.write(audio_path, wav, tts.sample_rate)
+        item = {
+            "engine": "neutts.NeuTTS",
+            "model_checkpoint": args.model_checkpoint,
+            "codec_checkpoint": args.codec_checkpoint,
+            "language": args.language,
+            "reference_audio_path": str(reference_audio_path),
+            "reference_text": ref_text,
+            **reference_meta,
+            "prompt": prompt,
+            "output_path": str(audio_path),
+            "reference_codes": int(len(ref_codes)),
+            **audio_stats(wav, tts.sample_rate),
+        }
+        results.append(item)
+        print(json.dumps(item, ensure_ascii=False), flush=True)
+
+    metadata = {
+        "engine": "neutts.NeuTTS",
+        "model_checkpoint": args.model_checkpoint,
+        "codec_checkpoint": args.codec_checkpoint,
+        "language": args.language,
+        "reference_audio_path": str(reference_audio_path),
+        "reference_text": ref_text,
+        **reference_meta,
+        "samples": results,
+    }
+    (output_dir / "samples.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
 
 
 if __name__ == "__main__":
