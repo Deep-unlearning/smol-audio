@@ -14,6 +14,22 @@ The recipe is language-agnostic. Italian is used as the worked example because t
 | [`generate_samples.py`](generate_samples.py) | Slim voice-clone inference CLI using Neuphonic's official `neutts.NeuTTS` engine. |
 | [`config_yodas_it.yaml`](config_yodas_it.yaml) | Example training config matching the validated 300k Italian YODAS-Granary run. |
 
+## Use the Italian model directly
+
+You can generate Italian speech from the best checkpoint from the 100-sample WER comparison without training first:
+
+```bash
+python generate_samples.py \
+    --model-checkpoint Steveeeeeeen/neutts-yodas300k-cml-continued-phonemizer-it \
+    --encoded-dataset Steveeeeeeen/cml-tts-italian-neucodec \
+    --reference-index 46 \
+    --language it \
+    --prompts "Oggi registriamo una breve frase in italiano per verificare la qualità della voce sintetica." \
+    --output-dir ./samples/italian-demo
+```
+
+`generate_samples.py` uses Neuphonic's official `neutts.NeuTTS` inference engine. The `--encoded-dataset` row supplies the reference voice; change `--reference-index` to clone a different voice from the dataset.
+
 ## Typical pipeline
 
 ```bash
@@ -45,7 +61,7 @@ Change two things:
 
 ## Hardware
 
-Smoke runs work on a single 16 GB GPU. The full 3000-step Italian config in `config_yodas_it.yaml` is sized for an 80 GB A100 / H100. Lower `per_device_train_batch_size` and re-enable `gradient_checkpointing` if you have less memory.
+Smoke runs work on a single 16 GB GPU. The full 3000-step Italian config in `config_yodas_it.yaml` is sized for an 80 GB A100 / H100. Lower `per_device_train_batch_size`, increase `gradient_accumulation_steps`, and keep `gradient_checkpointing: true` if you have less memory.
 
 ## Naming note
 
