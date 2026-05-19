@@ -1,8 +1,9 @@
 """Encode a Hugging Face audio dataset into NeuCodec tokens for NeuTTS training.
 
 Reads a source dataset that has a text column and an audio column, resamples each
-clip to 24 kHz mono, runs `neucodec.NeuCodec.encode_code`, and writes a dataset
-with just `text` and `codes` -- the schema expected by `finetune_neutts_nano.py`.
+clip to 16 kHz mono for NeuCodec input, runs `neucodec.NeuCodec.encode_code`,
+and writes a dataset with just `text` and `codes` -- the schema expected by
+`finetune_neutts_nano.py`. NeuCodec decodes those codes back to 24 kHz audio.
 
 Example:
     python encode_dataset.py \
@@ -28,7 +29,8 @@ import torch
 from datasets import Dataset, load_dataset
 from huggingface_hub import create_repo
 
-NEUCODEC_SAMPLE_RATE = 24_000
+NEUCODEC_INPUT_SAMPLE_RATE = 16_000
+NEUCODEC_OUTPUT_SAMPLE_RATE = 24_000
 CODEBOOK_SIZE = 65_536
 
 
@@ -61,13 +63,13 @@ def load_codec(checkpoint: str, device: torch.device):
     return codec
 
 
-def to_mono_24k(audio_field) -> np.ndarray:
+def to_mono_16k(audio_field) -> np.ndarray:
     array = np.asarray(audio_field["array"], dtype=np.float32)
     if array.ndim == 2:
         array = array.mean(axis=0)
     sr = int(audio_field["sampling_rate"])
-    if sr != NEUCODEC_SAMPLE_RATE:
-        array = librosa.resample(array, orig_sr=sr, target_sr=NEUCODEC_SAMPLE_RATE)
+    if sr != NEUCODEC_INPUT_SAMPLE_RATE:
+        array = librosa.resample(array, orig_sr=sr, target_sr=NEUCODEC_INPUT_SAMPLE_RATE)
     return array
 
 
@@ -92,7 +94,7 @@ def iter_records(source, codec, device: torch.device, text_column: str, audio_co
         if not text or audio is None:
             continue
         try:
-            wav = to_mono_24k(audio)
+            wav = to_mono_16k(audio)
             codes = encode_one(codec, wav, device)
         except Exception as exc:
             print(f"[skip row] {exc}")
