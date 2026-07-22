@@ -7,6 +7,7 @@
 Practical notebooks for shrinking, optimizing, and customizing audio AI models with the Hugging Face ecosystem.
 
 ### Latest examples
+- Fine-tune Qwen2-Audio for environmental sound classification (ESC-50) with TRL
 - Inference with Perception Encoder for Audio-Video (PE-AV)
 - Fine-tune Audio Flamingo 3
 - Granite Speech 4.0 1b ASR
@@ -22,3 +23,4 @@ Practical notebooks for shrinking, optimizing, and customizing audio AI models w
 | ASR Fine-tuning | [Fine-tune Parakeet](Fine_tune_Parakeet.ipynb) | Fine-tune NVIDIA Parakeet CTC for speech recognition (full + LoRA) |
 | ASR Fine-tuning | [Fine-tune Voxtral ASR](Fine_tune_Voxtral_ASR.ipynb) | Fine-tune Voxtral for ASR with prompt masking (full + LoRA) |
 | Multimodal | [Inference with PE-AV-Base](Inference_PE_AV_Base.ipynb) | Zero-shot video classification and audio↔text retrieval (AudioCaps) with Meta's Perception Encoder for Audio-Video |
+| Audio Classification | [Fine-tune Qwen2-Audio (TRL)](finetune_qwen2_audio_trl.py) | Fine-tune Qwen2-Audio on ESC-50 environmental sound classification with TRL SFT (LoRA), then measure accuracy on held-out clips — runnable via `hf jobs` |
