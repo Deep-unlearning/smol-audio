@@ -1,5 +1,0 @@
--r requirements.txt
-datasets>=4
-accelerate
-jiwer
-trackio

@@ -6,3 +6,9 @@ safetensors
 numpy
 soundfile
 librosa
+datasets>=4
+accelerate
+jiwer
+trackio
+pyarrow
+matplotlib
