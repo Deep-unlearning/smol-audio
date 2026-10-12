@@ -12,6 +12,8 @@ This tutorial follows one concrete implementation: adapting the offline 2B [Cohe
 
 The [smol-audio example](https://github.com/Deep-unlearning/smol-audio/tree/master/cohere_transcribe_streaming) contains the code. You can also follow the [inference notebook](https://github.com/Deep-unlearning/smol-audio/blob/master/cohere_transcribe_streaming/Stream_Cohere_Transcribe.ipynb) and [distillation notebook](https://github.com/Deep-unlearning/smol-audio/blob/master/cohere_transcribe_streaming/Distill_Streaming_Student.ipynb).
 
+Try the [live microphone Space](https://huggingface.co/spaces/Steveeeeeeen/cohere-streaming-demo) first: choose a language, click Record, and speak for up to 25 seconds. Captions appear as audio arrives; Stop flushes the remaining audio and produces a final transcript. The [demo source](https://github.com/Deep-unlearning/smol-audio/tree/master/cohere_transcribe_streaming/space) shows how the browser sends audio chunks to a streaming GPU worker.
+
 ## How streaming recognition works
 
 An offline encoder can use the entire recording to interpret every frame. A streaming encoder has to limit which future frames each prediction can see. It also needs to carry context from one chunk to the next.
@@ -51,7 +53,10 @@ cd smol-audio/cohere_transcribe_streaming
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+hf auth login
 ```
+
+Accept access to the [base Cohere model](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) first. The adapter loads its processor and decoder alongside the streaming checkpoint.
 
 The requirements pin `transformers==5.14.1` because the adapter uses streaming encoder internals. A GPU is recommended for inference. Distillation keeps both the frozen teacher and trainable student in memory; use an A100 80 GB or H100 as the starting point for this 2B recipe.
 

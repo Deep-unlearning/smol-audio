@@ -9,6 +9,8 @@ Two walkthroughs for running [Cohere Streaming](https://huggingface.co/Steveeeee
 
 The companion [Hugging Face blog draft](streaming-asr-with-transformers.md) explains the streaming design and walks through the Transformers recipe.
 
+Try the [live microphone demo](https://huggingface.co/spaces/Steveeeeeeen/cohere-streaming-demo): choose a language, record up to 25 seconds, and watch the transcript update as you speak. Stop finalizes the last words. The [Space source](space/) includes instructions for running locally or deploying your own copy.
+
 ## Run locally
 
 Use Python 3.10 or newer in a fresh environment. Install dependencies and run the scripts from this example's directory:
@@ -17,8 +19,11 @@ Use Python 3.10 or newer in a fresh environment. Install dependencies and run th
 git clone https://github.com/Deep-unlearning/smol-audio.git
 cd smol-audio/cohere_transcribe_streaming
 pip install -r requirements.txt
+hf auth login
 python stream_file.py speech.wav --language en --lookahead 6 --realtime
 ```
+
+Accept access to the [base Cohere model](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) before loading it.
 
 `transformers==5.14.1` is pinned for its streaming encoder internals. The CLI resamples files to 16 kHz mono. The notebooks explain `CohereStreaming.reset()`, `step()`, and `finish()`, supported languages, and lookahead settings. Final re-encoding defaults to a 30-second limit; longer recordings can hit the 256-token decoding budget. Reset at speech boundaries.
 

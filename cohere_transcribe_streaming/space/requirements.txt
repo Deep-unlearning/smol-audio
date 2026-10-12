@@ -1,0 +1,8 @@
+torch==2.13.0
+transformers==5.14.1
+spaces==0.51.3
+huggingface_hub
+safetensors
+numpy
+librosa
+soxr
