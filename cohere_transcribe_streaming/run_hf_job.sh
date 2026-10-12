@@ -8,7 +8,7 @@
 #   ./run_hf_job.sh distill a100-large 12h accelerate launch train.py --help
 #   ./run_hf_job.sh inspect a100-large 1h python stream_file.py --help
 #
-# What happens: the job clones smol-audio, enters this example, installs it, runs your command, and uploads everything written to
+# What happens: the job clones smol-audio, enters this example, installs dependencies, runs your command, and uploads everything written to
 # `results/` (plus the log) to a Hub dataset under runs/<run-name>/.
 #
 # One-time setup:  pip install -U huggingface_hub && hf auth login      (Jobs need a Pro / Team / Enterprise plan)
@@ -55,7 +55,7 @@ mkdir -p results
 {
   echo "== $(date -u) run=$RUN cmd=$*"
   nvidia-smi --query-gpu=name,memory.total --format=csv 2>/dev/null || echo "no GPU"
-  uv pip install --system -q -e ".[train]"
+  uv pip install --system -q -r requirements-train.txt
 } 2>&1 | tee results/job.log
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
   echo "== dependency install failed, not running the command" | tee -a results/job.log

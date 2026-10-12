@@ -11,22 +11,16 @@ The scripts and tests live alongside the notebooks so both walkthroughs use the 
 
 ## Run locally
 
-Use Python 3.10 or newer in a fresh environment. Install this example from its own directory:
+Use Python 3.10 or newer in a fresh environment. Install dependencies and run the scripts from this example's directory:
 
 ```bash
 git clone https://github.com/Deep-unlearning/smol-audio.git
 cd smol-audio/cohere_transcribe_streaming
-pip install -e .
+pip install -r requirements.txt
 python stream_file.py speech.wav --language en --lookahead 6 --realtime
 ```
 
-For notebook imports without a clone:
-
-```bash
-pip install "git+https://github.com/Deep-unlearning/smol-audio#subdirectory=cohere_transcribe_streaming"
-```
-
-The package pins `transformers==5.14.1` because the encoder conversion uses that version's streaming encoder internals. Model weights are downloaded when you load the model. The input is mono float32 audio at 16 kHz; the CLI resamples other rates.
+The requirements pin `transformers==5.14.1` because the encoder conversion uses that version's streaming encoder internals. Model weights are downloaded when you load the model. The input is mono float32 audio at 16 kHz; the CLI resamples other rates.
 
 ```python
 from model import CohereStreaming
@@ -45,7 +39,7 @@ The checkpoint supports en, fr, de, es, it, pt, nl, and pl. Choose lookahead 0, 
 Install the training dependencies, then label audio and train on the resulting dataset:
 
 ```bash
-pip install -e ".[train]"
+pip install -r requirements-train.txt
 python distill_dataset.py \
     --dataset hf-internal-testing/librispeech_asr_dummy --config clean --split validation \
     --language en --limit 16 --no-streaming --out work/relabel
@@ -59,7 +53,7 @@ The notebook explains the teacher, student, feature normalization, three loss te
 | File | Purpose |
 |---|---|
 | [model.py](model.py) | Feature extraction, cache-aware encoder conversion, decoding, and `CohereStreaming`. |
-| [stream_file.py](stream_file.py) | File streaming CLI; also installed as `cohere-stream-file`. |
+| [stream_file.py](stream_file.py) | File streaming CLI, run with `python stream_file.py`. |
 | [distill_dataset.py](distill_dataset.py) | Teacher relabelling, encoded dataset loading, and training batches. |
 | [train.py](train.py) | Student losses, `DistillTrainer`, evaluation, and checkpoint saving. |
 | [run_hf_job.sh](run_hf_job.sh) | Submit a command to Hugging Face Jobs and upload `results/` and logs. |
@@ -67,7 +61,7 @@ The notebook explains the teacher, student, feature normalization, three loss te
 
 ## Hugging Face Jobs
 
-Jobs rent GPUs and incur charges. Run them explicitly after `hf auth login`, with `HF_TOKEN` available for the job secret. The wrapper clones smol-audio at `master`, enters `cohere_transcribe_streaming`, installs `[train]`, and uploads `results/` to a Hub dataset under `runs/<run-name>/`. Set `GIT_REF` to a pushed branch or commit to run changes before they are merged.
+Jobs rent GPUs and incur charges. Run them explicitly after `hf auth login`, with `HF_TOKEN` available for the job secret. The wrapper clones smol-audio at `master`, enters `cohere_transcribe_streaming`, installs `requirements-train.txt`, and uploads `results/` to a Hub dataset under `runs/<run-name>/`. Set `GIT_REF` to a pushed branch or commit to run changes before they are merged.
 
 ```bash
 ./run_hf_job.sh distill a100-large 6h python train.py \
@@ -80,8 +74,8 @@ For multiple GPUs use `accelerate launch --multi_gpu train.py ...`. The wrapper 
 ## Validation and source
 
 ```bash
-pip install -e ".[train,dev]"
-python -m pytest -q
+pip install -r requirements-train.txt pytest
+python -m pytest tests -q
 ```
 
 Tests check encoder weight mapping, cached/full-sequence parity, padding invariance, incremental features, endpoint re-encoding, teacher labels, loss gradients, and checkpoint saving/resumption. They fetch the public processor configuration; they do not download the 2B weights.
