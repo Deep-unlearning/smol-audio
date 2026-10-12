@@ -18,26 +18,11 @@ Try the [live microphone Space](https://huggingface.co/spaces/Steveeeeeeen/coher
 
 An offline encoder can use the entire recording to interpret every frame. A streaming encoder has to limit which future frames each prediction can see. It also needs to carry context from one chunk to the next.
 
-Here is the path through our implementation:
+The figure compares the original [Cohere architecture](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) with the streaming student used here:
 
-```text
-16 kHz mono audio
-        |
-        v
-log-mel frames -> running normalization
-        |
-        v
-causal convolutions + chunk-limited attention
-        |                         ^
-        |                         |
-        +------------------> cached past context
-        |
-        v
-accumulated encoder states -> decoder -> partial captions
-        |
-        v
-end of utterance -> optional re-encoding -> final transcript
-```
+![Offline Cohere Transcribe compared with our streaming student. Incremental features, causal time convolutions, chunk-limited attention, and past-context caches allow the encoder to process arriving audio. Cohere's text decoder periodically reads accumulated encoder states to update captions. The attention inset shows cached past and the current chunk remaining visible while later chunks are hidden.](assets/cohere-streaming-architecture.png)
+
+*The streaming changes are shown in green. Attention can still see future frames within the current chunk; later chunks are hidden. The decoder architecture is retained and called periodically to revise captions. CTC is an auxiliary training objective in this recipe; the live-caption path shown uses the Transformer decoder. [Vector version](assets/cohere-streaming-architecture.svg).*
 
 Transformers already includes a native cache-aware [Nemotron ASR Streaming encoder](https://huggingface.co/docs/transformers/model_doc/nemotron_asr_streaming). Our Cohere adapter reuses that encoder implementation and maps compatible Cohere weights into it. It retains Cohere's text decoder and adds the conversion, feature normalization, and caption logic needed for this model.
 
