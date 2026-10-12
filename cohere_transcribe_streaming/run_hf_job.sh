@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
-# Run a command from this example on a Hugging Face Job (a rented GPU).
-#
-#   ./run_hf_job.sh <run-name> <flavor> <timeout> <command...>
-#
-# Examples:
-#   ./run_hf_job.sh relabel a100-large 6h python distill_dataset.py --help
-#   ./run_hf_job.sh distill a100-large 12h accelerate launch train.py --help
-#   ./run_hf_job.sh inspect a100-large 1h python stream_file.py --help
-#
-# What happens: the job clones smol-audio, enters this example, installs dependencies, runs your command, and uploads everything written to
-# `results/` (plus the log) to a Hub dataset under runs/<run-name>/.
-#
-# One-time setup:  pip install -U huggingface_hub && hf auth login      (Jobs need a Pro / Team / Enterprise plan)
-# Settings (environment variables, all optional):
-#   REPO_URL      git repo to clone      (default: this project on GitHub)
-#   GIT_REF       branch / tag / commit  (default: smol-audio's `master`). The job clones from GitHub, so
-#                 push your changes first; uncommitted local edits never reach the job.
-#   RESULTS_REPO  Hub dataset for outputs (default: <your-username>/cohere-streaming-results, created if missing)
-#   REPO_SUBDIR   example within repo    (default: cohere_transcribe_streaming)
+# Run a command on a rented Hugging Face GPU and upload results/ with its logs.
+# Usage: ./run_hf_job.sh <run-name> <flavor> <timeout> <command...>
+# Setup: pip install -U huggingface_hub && hf auth login
+# Optional environment settings:
+#   REPO_URL: git repository; GIT_REF: pushed branch, tag, or commit
+#   REPO_SUBDIR: example directory within the repository
+#   RESULTS_REPO: output dataset (defaults to <your-user>/cohere-streaming-results)
 set -euo pipefail
 
 usage() {
@@ -32,27 +20,41 @@ if [[ $# -lt 4 ]]; then
   exit 2
 fi
 
-RUN="$1"; FLAVOR="$2"; TIMEOUT="$3"; shift 3
+RUN="$1"
+FLAVOR="$2"
+TIMEOUT="$3"
+shift 3
 REPO_URL="${REPO_URL:-https://github.com/Deep-unlearning/smol-audio}"
 GIT_REF="${GIT_REF:-master}"
 REPO_SUBDIR="${REPO_SUBDIR-cohere_transcribe_streaming}"
-RESULTS_REPO="${RESULTS_REPO:-$(hf auth whoami | awk 'NR == 1 {print $NF}')/cohere-streaming-results}"
-
-# Only `results/` is uploaded when the job ends, and the container is deleted afterwards. A trained checkpoint
-# written anywhere else is lost, so make train.py push it to the Hub.
-if [[ " $* " == *" train.py "* && " $* " != *"push_to_hub"* ]]; then
-  echo "WARNING: train.py without --push_to_hub --hub_model_id <you>/<name>: the checkpoint will be lost when the job ends." >&2
-  echo "         (multi-GPU flavors: use 'accelerate launch --multi_gpu train.py ...' or 'torchrun --nproc_per_node N train.py ...')" >&2
+if [[ -z "${RESULTS_REPO:-}" ]]; then
+  HF_USERNAME=$(hf auth whoami | awk 'NR == 1 {print $NF}')
+  RESULTS_REPO="$HF_USERNAME/cohere-streaming-results"
 fi
 
-# Everything below runs INSIDE the job container.
+if [[ " $* " == *" train.py "* && " $* " != *"push_to_hub"* ]]; then
+  echo "Only results/ is uploaded. Save with --output_dir results/train or --push_to_hub --hub_model_id <you>/<name>." >&2
+fi
+
+# This script runs inside the job container.
 JOB_SCRIPT=$(cat <<'INNER'
 set -uo pipefail
-git clone -q "$REPO_URL" /work && cd /work && git checkout -q "$GIT_REF" || { echo "git clone/checkout of $REPO_URL @ $GIT_REF failed" >&2; exit 1; }
-cd "/work/$REPO_SUBDIR" || { echo "example directory $REPO_SUBDIR is missing" >&2; exit 1; }
+if ! git clone -q "$REPO_URL" /work; then
+  echo "Could not clone $REPO_URL" >&2
+  exit 1
+fi
+cd /work || exit 1
+if ! git checkout -q "$GIT_REF"; then
+  echo "Could not check out $GIT_REF" >&2
+  exit 1
+fi
+if ! cd "/work/$REPO_SUBDIR"; then
+  echo "Example directory $REPO_SUBDIR is missing" >&2
+  exit 1
+fi
 mkdir -p results
 export TRACKIO_DIR="${TRACKIO_DIR:-$PWD/results/trackio}"
-# No `set -e` from here on: whatever happens, we still upload results/ (with job.log) at the end.
+# Keep going after a failure so the log can still be uploaded.
 {
   echo "== $(date -u) run=$RUN cmd=$*"
   nvidia-smi --query-gpu=name,memory.total --format=csv 2>/dev/null || echo "no GPU"

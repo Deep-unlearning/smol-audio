@@ -7,6 +7,8 @@ Two walkthroughs for running [Cohere Streaming](https://huggingface.co/Steveeeee
 | [Stream Cohere Transcribe](Stream_Cohere_Transcribe.ipynb) · [Open in Colab](https://colab.research.google.com/github/Deep-unlearning/smol-audio/blob/master/cohere_transcribe_streaming/Stream_Cohere_Transcribe.ipynb) | Load the released checkpoint, caption a clip in 80 ms chunks, compare lookahead settings, and run a small WER check. | GPU recommended; CPU works more slowly. |
 | [Distill a streaming student](Distill_Streaming_Student.ipynb) · [Open in Colab](https://colab.research.google.com/github/Deep-unlearning/smol-audio/blob/master/cohere_transcribe_streaming/Distill_Streaming_Student.ipynb) | Teacher-label a small slice of audio, train with `transformers.Trainer`, evaluate held-out clips, and stream with the saved checkpoint. | A100 80 GB or H100 recommended for training the 2B model. |
 
+The companion [Hugging Face blog draft](streaming-asr-with-transformers.md) explains the streaming design and walks through the Transformers recipe.
+
 ## Run locally
 
 Use Python 3.10 or newer in a fresh environment. Install dependencies and run the scripts from this example's directory:
