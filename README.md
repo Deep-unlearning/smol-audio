@@ -7,6 +7,7 @@
 Practical notebooks for shrinking, optimizing, and customizing audio AI models with the Hugging Face ecosystem.
 
 ### Latest examples
+- Stream Cohere Transcribe and distill your own streaming student
 - Inference with Perception Encoder for Audio-Video (PE-AV)
 - Fine-tune Audio Flamingo 3
 - Granite Speech 4.0 1b ASR
@@ -16,6 +17,8 @@ Practical notebooks for shrinking, optimizing, and customizing audio AI models w
 
 | Category | Notebook | Description |
 |----------|----------|-------------|
+| Streaming ASR | [Stream Cohere Transcribe](cohere_transcribe_streaming/Stream_Cohere_Transcribe.ipynb) · [Colab](https://colab.research.google.com/github/Deep-unlearning/smol-audio/blob/master/cohere_transcribe_streaming/Stream_Cohere_Transcribe.ipynb) | Run the released streaming model on 80 ms audio chunks and compare lookahead settings |
+| ASR Distillation | [Distill a streaming student](cohere_transcribe_streaming/Distill_Streaming_Student.ipynb) · [Colab](https://colab.research.google.com/github/Deep-unlearning/smol-audio/blob/master/cohere_transcribe_streaming/Distill_Streaming_Student.ipynb) | Teacher-label a small dataset, train a streaming Cohere student, evaluate, and stream with the checkpoint; [companion scripts](cohere_transcribe_streaming/) |
 | ASR Fine-tuning | [Fine-tune Whisper](Fine_tune_Whisper.ipynb) | Fine-tune Whisper on a custom language/domain using transformers + datasets |
 | ASR Fine-tuning | [Fine-tune Granite Speech Italian](Fine_tune_Granite_Speech_Italian.ipynb) | Fine-tune IBM Granite Speech for Italian ASR with the YODAS-Granary dataset |
 | Audio Captioning | [Fine-tune Audio Flamingo 3](Fine_tune_Audio_Flamingo_3.ipynb) | Fine-tune Audio Flamingo 3 for audio captioning (full + LoRA) |

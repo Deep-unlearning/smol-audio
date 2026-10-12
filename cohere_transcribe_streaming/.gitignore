@@ -1,0 +1,9 @@
+work/
+results/
+data/
+out/
+*.safetensors
+*.egg-info/
+build/
+dist/
+.pytest_cache/
