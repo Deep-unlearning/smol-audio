@@ -51,6 +51,7 @@ set -uo pipefail
 git clone -q "$REPO_URL" /work && cd /work && git checkout -q "$GIT_REF" || { echo "git clone/checkout of $REPO_URL @ $GIT_REF failed" >&2; exit 1; }
 cd "/work/$REPO_SUBDIR" || { echo "example directory $REPO_SUBDIR is missing" >&2; exit 1; }
 mkdir -p results
+export TRACKIO_DIR="${TRACKIO_DIR:-$PWD/results/trackio}"
 # No `set -e` from here on: whatever happens, we still upload results/ (with job.log) at the end.
 {
   echo "== $(date -u) run=$RUN cmd=$*"

@@ -31,14 +31,14 @@ python distill_dataset.py \
     --language en --limit 16 --no-streaming --out work/relabel
 python train.py --data work/relabel --max_steps 20 \
     --per_device_train_batch_size 1 --eval_strategy no --eval_on_start false \
-    --report_to none --output_dir work/tiny-student
+    --report_to trackio --output_dir work/tiny-student
 ```
 
-This is a toy run. The notebook explains the losses, evaluation, and checkpoint format. Generate labels with `distill_dataset.py`; older pointer-style labels from the original training run are incompatible.
+Training metrics use [Trackio](https://huggingface.co/docs/trackio/transformers_integration) under the `cohere-streaming` project. This is a toy run. The notebook explains the losses, evaluation, and checkpoint format. Generate labels with `distill_dataset.py`; older pointer-style labels from the original training run are incompatible.
 
 ## Hugging Face Jobs
 
-After `hf auth login`, with `HF_TOKEN` available for the job secret, [run_hf_job.sh](run_hf_job.sh) can submit the scripts to rented GPUs. It installs the training requirements and uploads `results/` and logs. Set `GIT_REF` to a pushed branch or commit to preview changes before merge.
+After `hf auth login`, with `HF_TOKEN` available for the job secret, [run_hf_job.sh](run_hf_job.sh) can submit the scripts to rented GPUs. It installs the training requirements and uploads `results/`, including Trackio metrics in `results/trackio`. Set `GIT_REF` to a pushed branch or commit to preview changes before merge.
 
 ```bash
 ./run_hf_job.sh distill a100-large 6h python train.py \

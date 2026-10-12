@@ -20,7 +20,7 @@ Why `transformers.Trainer`
 --------------------------
 Distillation here is an ordinary supervised training loop with a custom loss, so `Trainer` gives us everything
 else for free: multi-GPU (`torchrun` / `accelerate launch`), bf16, gradient accumulation, LR schedule, logging
-(`--report_to tensorboard|trackio|wandb`), checkpoints, resume (`--resume_from_checkpoint`) and pushing to the
+(`--report_to trackio`), checkpoints, resume (`--resume_from_checkpoint`) and pushing to the
 Hub (`--push_to_hub --hub_model_id ...`). Only three things are custom: `compute_loss` (the distillation losses),
 `evaluate` (WER of the student's decoders, which needs generation) and the checkpoint layout, which is what
 `model.CohereStreaming` loads. TRL has no trainer for encoder-decoder audio distillation, so it is not used.
@@ -34,7 +34,7 @@ Example
         --max_steps 500 --output_dir checkpoint/train_pilot
 
     # several GPUs: the same flags under torchrun (or `accelerate launch train.py ...`)
-    torchrun --nproc_per_node 8 train.py --data "my_labels/*" --max_steps 2000 --report_to tensorboard
+    torchrun --nproc_per_node 8 train.py --data "my_labels/*" --max_steps 2000 --report_to trackio
 
 Every `TrainingArguments` flag works (`--per_device_train_batch_size`, `--gradient_accumulation_steps`,
 `--save_steps`, ...); `python train.py --help` lists them with the distillation flags below. That includes the
@@ -382,6 +382,8 @@ class DistillTrainingArguments(TrainingArguments):
     eval_steps: float = field(default=250, metadata={"help": "evaluate every N steps (and at the end)"})
     eval_on_start: bool = field(default=True, metadata={"help": "evaluate before any update (the baseline)"})
     logging_steps: float = 10
+    report_to: str = "trackio"
+    project: str = "cohere-streaming"
     save_steps: float = 500
     save_total_limit: Optional[int] = 2
     ddp_timeout: int = 3600  # evals run on rank 0 only and take minutes: generous collective timeout

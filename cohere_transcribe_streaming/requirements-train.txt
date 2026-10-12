@@ -2,4 +2,4 @@
 datasets>=4
 accelerate
 jiwer
-tensorboard
+trackio
