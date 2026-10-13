@@ -4,19 +4,25 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from pathlib import Path
 
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
 from huggingface_hub.dataclasses import strict
-from safetensors.torch import load_file
+from safetensors.torch import load_file, save_file
 from torch import nn
 from transformers import (
     AutoProcessor,
+    CohereAsrConfig,
     CohereAsrForConditionalGeneration,
+    CohereAsrProcessor,
+    GenerationConfig,
     NemotronAsrStreamingEncoder,
     NemotronAsrStreamingEncoderConfig,
+    PreTrainedConfig,
+    PreTrainedModel,
 )
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.cohere_asr.feature_extraction_cohere_asr import LOG_ZERO_GUARD_VALUE
@@ -112,6 +118,22 @@ def save_stats(stats: dict, path: str | Path):
 
 def load_stats(path: str | Path) -> dict:
     return json.loads(Path(path).read_text())
+
+
+def save_processor(processor, directory: str | Path):
+    """Save native processor assets without obsolete code references or download settings."""
+    processor.save_pretrained(directory)
+    download_keys = (
+        "token", "use_auth_token", "cache_dir", "local_files_only", "force_download",
+        "revision", "subfolder", "_commit_hash", "proxies", "is_local",
+    )
+    for filename in ("tokenizer_config.json", "processor_config.json"):
+        path = Path(directory) / filename
+        config = json.loads(path.read_text())
+        for key in ("auto_map", *download_keys):
+            config.pop(key, None)
+            config.get("feature_extractor", {}).pop(key, None)
+        path.write_text(json.dumps(config, indent=2) + "\n")
 
 
 class StreamingFeaturizer:
@@ -564,9 +586,9 @@ def _default_device() -> str:
     return "cpu"
 
 
-def _checkpoint_weights(state_dict: dict, prefix: str) -> dict:
+def _checkpoint_weights(state_dict: dict, prefix: str, to_float: bool = True) -> dict:
     return {
-        name[len(prefix):]: weights.float()
+        name[len(prefix):]: weights.float() if to_float else weights
         for name, weights in state_dict.items()
         if name.startswith(prefix)
     }
@@ -595,6 +617,7 @@ class CohereStreaming:
         final_beams: int = 4,
         suppress_brackets: bool = True,
         final_reencode_max_s: float = 30.0,
+        hub_kwargs: dict | None = None,
     ):
         if partials not in ("aed", "ctc"):
             raise ValueError(partials)
@@ -603,7 +626,7 @@ class CohereStreaming:
         self.device = device or _default_device()
         self.dtype = dtype
         stats, norm_mode, checkpoint_prior = self._load_model(
-            checkpoint, stats, left_context, lookahead, conv_init
+            checkpoint, stats, left_context, lookahead, conv_init, hub_kwargs or {}
         )
 
         self.stats = stats
@@ -640,16 +663,15 @@ class CohereStreaming:
             norm_mode=norm_mode,
         )
 
-    def _load_model(self, checkpoint, stats, left_context, lookahead, conv_init):
-        self.processor = AutoProcessor.from_pretrained(COHERE_MODEL_ID)
-        model = CohereAsrForConditionalGeneration.from_pretrained(COHERE_MODEL_ID, dtype=torch.float32)
+    def _load_model(self, checkpoint, stats, left_context, lookahead, conv_init, hub_kwargs):
         state_dict_path = None
         checkpoint_prior = None
         norm_mode = "causal"
+        config = {}
         if checkpoint is not None:
             checkpoint_path = Path(checkpoint)
             if not checkpoint_path.exists():
-                checkpoint_path = Path(snapshot_download(checkpoint))
+                checkpoint_path = Path(snapshot_download(checkpoint, **hub_kwargs))
             config = json.loads((checkpoint_path / "config.json").read_text())
             training_args = config["args"]
             left_context = config["encoder"]["sliding_window"] - 1
@@ -661,17 +683,38 @@ class CohereStreaming:
                 stats = load_stats(stats_path)
             state_dict_path = checkpoint_path / "student.safetensors"
 
-        self.encoder = build_streaming_encoder(
-            model.model.encoder,
-            model.config,
-            conv_init=conv_init,
-            left_context=left_context,
-            lookahead=lookahead,
-        )
-        self.ctc_head = nn.Linear(self.encoder.config.hidden_size, model.config.vocab_size + 1)
-        if state_dict_path is not None:
-            self._load_checkpoint_weights(model, state_dict_path)
-        del model.model.encoder
+        if config.get("cohere_config") is not None:
+            native_config = CohereAsrConfig.from_dict(config["cohere_config"])
+            self.processor = CohereAsrProcessor.from_pretrained(
+                checkpoint_path, config=native_config, local_files_only=True
+            )
+            # The checkpoint contains every weight, so no base-model weights are needed.
+            with torch.device("meta"):
+                model = CohereAsrForConditionalGeneration(native_config)
+                del model.model.encoder
+                self.encoder = CohereStreamingEncoder(CohereStreamingEncoderConfig.from_dict(config["encoder"]))
+                self.ctc_head = nn.Linear(self.encoder.config.hidden_size, model.config.vocab_size + 1)
+            self._load_checkpoint_weights(model, state_dict_path, assign=True)
+            self.encoder.encode_positions = nas.NemotronAsrStreamingEncoderRelPositionalEncoding(self.encoder.config)
+            if (checkpoint_path / "generation_config.json").exists():
+                model.generation_config = GenerationConfig.from_pretrained(checkpoint_path, local_files_only=True)
+        else:
+            base_hub_kwargs = {key: value for key, value in hub_kwargs.items() if key not in ("revision", "subfolder")}
+            self.processor = AutoProcessor.from_pretrained(COHERE_MODEL_ID, **base_hub_kwargs)
+            model = CohereAsrForConditionalGeneration.from_pretrained(
+                COHERE_MODEL_ID, dtype=torch.float32, **base_hub_kwargs
+            )
+            self.encoder = build_streaming_encoder(
+                model.model.encoder,
+                model.config,
+                conv_init=conv_init,
+                left_context=left_context,
+                lookahead=lookahead,
+            )
+            self.ctc_head = nn.Linear(self.encoder.config.hidden_size, model.config.vocab_size + 1)
+            if state_dict_path is not None:
+                self._load_checkpoint_weights(model, state_dict_path)
+            del model.model.encoder
         model.model.encoder = self.encoder
         self.model = model.to(self.device, self.dtype).eval()
         self.encoder = self.model.model.encoder
@@ -682,11 +725,13 @@ class CohereStreaming:
             )
         return stats, norm_mode, checkpoint_prior
 
-    def _load_checkpoint_weights(self, model, path):
+    def _load_checkpoint_weights(self, model, path, assign=False):
         state_dict = load_file(str(path))
-        self.encoder.load_state_dict(_checkpoint_weights(state_dict, "encoder."))
-        self.ctc_head.load_state_dict(_checkpoint_weights(state_dict, "ctc_head."))
-        missing, unexpected = model.load_state_dict(_checkpoint_weights(state_dict, "cohere."), strict=False)
+        self.encoder.load_state_dict(_checkpoint_weights(state_dict, "encoder.", not assign), assign=assign)
+        self.ctc_head.load_state_dict(_checkpoint_weights(state_dict, "ctc_head.", not assign), assign=assign)
+        missing, unexpected = model.load_state_dict(
+            _checkpoint_weights(state_dict, "cohere.", not assign), strict=False, assign=assign
+        )
         if unexpected or any(not name.startswith("model.encoder.") for name in missing):
             raise RuntimeError(f"decoder checkpoint mismatch: {unexpected[:5]} {missing[:5]}")
 
@@ -881,3 +926,159 @@ class CohereStreaming:
             self._committed = []
         tokens = self._aed(states, max_new=token_limit, num_beams=self.final_beams)
         return self._text(tokens)
+
+
+class CohereStreamingConfig(PreTrainedConfig):
+    """Checkpoint architecture, training metadata, and optional streaming defaults."""
+
+    model_type = "cohere_streaming"
+
+    def __init__(self, encoder=None, args=None, cohere_config=None, streaming=None, **kwargs):
+        self.encoder = encoder or {}
+        self.args = args or {}
+        self.cohere_config = cohere_config
+        self.streaming = streaming or {}
+        super().__init__(**kwargs)
+
+
+class CohereStreamingModel(PreTrainedModel):
+    """Load from AutoModel, then transcribe through reset(), step(), and finish()."""
+
+    config_class = CohereStreamingConfig
+    base_model_prefix = "model"
+
+    def __init__(self, config, streamer):
+        super().__init__(config)
+        self._streamer = streamer
+        self.model = streamer.model
+        self.ctc_head = streamer.ctc_head
+
+    @property
+    def processor(self):
+        return self._streamer.processor
+
+    @property
+    def encoder(self):
+        return self.model.model.encoder
+
+    @property
+    def hop_ms(self):
+        return self._streamer.hop_ms
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path,
+        *model_args,
+        config=None,
+        dtype="auto",
+        torch_dtype=None,
+        device=None,
+        device_map=None,
+        **kwargs,
+    ):
+        """Load the complete student checkpoint on one CPU, CUDA, or MPS device."""
+        if model_args:
+            raise TypeError("Pass streaming settings as keyword arguments.")
+        hub_keys = ("token", "revision", "cache_dir", "local_files_only", "force_download", "subfolder")
+        hub_kwargs = {key: kwargs.pop(key) for key in hub_keys if key in kwargs}
+        if config is None:
+            config = CohereStreamingConfig.from_pretrained(pretrained_model_name_or_path, **hub_kwargs)
+        checkpoint = Path(pretrained_model_name_or_path)
+        subfolder = hub_kwargs.pop("subfolder", "")
+        if not checkpoint.exists():
+            revision = getattr(config, "_commit_hash", None)
+            if revision is not None:
+                hub_kwargs["revision"] = revision
+            checkpoint = Path(snapshot_download(str(pretrained_model_name_or_path), **hub_kwargs))
+        checkpoint = checkpoint / subfolder
+
+        if isinstance(device_map, dict):
+            if set(device_map) != {""}:
+                raise ValueError('Streaming supports one device; use device_map={"": "cuda:0"} or device="cpu".')
+            device_map = device_map[""]
+        if device_map == "auto":
+            device_map = _default_device()
+        if device is not None and device_map is not None:
+            raise ValueError("Choose either device or device_map.")
+        device = device if device is not None else device_map
+        if isinstance(device, int):
+            device = f"cuda:{device}"
+        if torch_dtype is not None and dtype == "auto":
+            dtype = torch_dtype
+        if dtype == "auto":
+            dtype = config.dtype or torch.bfloat16
+        if isinstance(dtype, str):
+            dtype = getattr(torch, dtype)
+
+        for key in ("_from_auto", "_commit_hash", "trust_remote_code", "code_revision"):
+            kwargs.pop(key, None)
+        adapter_kwargs = kwargs.pop("adapter_kwargs", None)
+        if adapter_kwargs:
+            raise ValueError("Adapter loading is not supported by this streaming model.")
+        streaming_settings = {**config.streaming, **kwargs}
+        streamer = CohereStreaming(
+            checkpoint=str(checkpoint), device=device, dtype=dtype, hub_kwargs=hub_kwargs, **streaming_settings
+        )
+        config.streaming = streaming_settings
+        model = cls(config, streamer).eval()
+        model.reset()
+        return model
+
+    def _apply(self, fn, recurse=True):
+        super()._apply(fn, recurse=recurse)
+        self._streamer.device = self.device
+        self._streamer.dtype = self.dtype
+        if hasattr(self._streamer, "language"):
+            self._streamer.reset(self._streamer.language)
+        return self
+
+    def reset(self, language="en"):
+        """Clear the previous utterance and choose its language."""
+        return self._streamer.reset(language)
+
+    def step(self, audio):
+        """Feed mono 16 kHz audio and return the current transcript."""
+        return self._streamer.step(audio)
+
+    def finish(self):
+        """Flush the remaining audio and return the final transcript."""
+        return self._streamer.finish()
+
+    def forward(self, *args, **kwargs):
+        raise NotImplementedError("Use reset(), step(audio), and finish() for streaming transcription.")
+
+    def save_pretrained(self, save_directory, *, push_to_hub=False, safe_serialization=True, **kwargs):
+        """Save a complete checkpoint that AutoModel can load with trust_remote_code=True."""
+        if push_to_hub or not safe_serialization or kwargs:
+            raise ValueError("Save locally as safetensors, then upload the directory with HfApi.upload_folder().")
+        directory = Path(save_directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        self.config.cohere_config = self.model.config.to_dict()
+        self.config.encoder = self.encoder.config.to_dict()
+        self.config.args.update(norm=self._streamer.featurizer.norm_mode, eval_prior=self._streamer.prior_frames)
+        self.config.dtype = self.dtype
+        self.config.architectures = [type(self).__name__]
+        self.config.auto_map = {
+            "AutoConfig": "model.CohereStreamingConfig",
+            "AutoModel": "model.CohereStreamingModel",
+        }
+        self.config.save_pretrained(directory)
+        save_processor(self.processor, directory)
+        self.model.generation_config.save_pretrained(directory)
+        save_stats(self._streamer.stats, directory / "mel_stats.json")
+        source = Path(__file__).resolve()
+        if source != (directory / "model.py").resolve():
+            shutil.copyfile(source, directory / "model.py")
+        weights = {f"encoder.{name}": value for name, value in self.encoder.state_dict().items()}
+        weights.update({f"ctc_head.{name}": value for name, value in self.ctc_head.state_dict().items()})
+        weights.update({
+            f"cohere.{name}": value
+            for name, value in self.model.state_dict().items()
+            if not name.startswith("model.encoder.")
+        })
+        save_file({name: value.detach().cpu().contiguous() for name, value in weights.items()}, directory / "student.safetensors")
+
+
+CohereStreamingConfig.register_for_auto_class("AutoConfig")
+CohereStreamingModel.register_for_auto_class("AutoModel")

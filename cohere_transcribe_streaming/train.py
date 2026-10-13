@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import random
+import shutil
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -46,6 +47,7 @@ from model import (
     build_streaming_encoder,
     ctc_greedy,
     estimate_stats,
+    save_processor,
     save_stats,
 )
 
@@ -337,8 +339,8 @@ class DistillTrainingArguments(TrainingArguments):
     """Transformers training arguments with defaults for this recipe."""
 
     output_dir: str = field(default="checkpoint/train", metadata={
-        "help": "final model (student.safetensors in bf16 + config.json + mel_stats.json, loadable by "
-                "CohereStreaming); intermediate checkpoint-N/ folders hold float32 weights for exact resume"})
+        "help": "final bf16 model with config, processor, and code for AutoModel loading; "
+                "intermediate checkpoint-N/ folders hold float32 weights for exact resume"})
     max_steps: int = field(default=2000, metadata={"help": "number of training steps"})
     learning_rate: float = field(default=5e-5, metadata={"help": "learning rate of the pretrained weights"})
     warmup_steps: int = field(default=200, metadata={"help": "steps of linear learning-rate warm-up"})
@@ -629,10 +631,23 @@ class DistillTrainer(Trainer):
             if not name.startswith("cohere.model.encoder."):
                 state[name] = tensor.detach().to(dtype).contiguous().cpu()
         save_file(state, checkpoint_dir / "student.safetensors")
-        config = {"encoder": student.encoder.config.to_dict(), "args": asdict(self.distill_args)}
+        config = {
+            "model_type": "cohere_streaming",
+            "architectures": ["CohereStreamingModel"],
+            "auto_map": {
+                "AutoConfig": "model.CohereStreamingConfig",
+                "AutoModel": "model.CohereStreamingModel",
+            },
+            "encoder": student.encoder.config.to_dict(),
+            "cohere_config": student.cohere.config.to_dict(),
+            "args": asdict(self.distill_args),
+        }
         (checkpoint_dir / "config.json").write_text(json.dumps(config, indent=1))
         save_stats(self.stats, checkpoint_dir / "mel_stats.json")
         (checkpoint_dir / "log.json").write_text(json.dumps(self.state.log_history, indent=1))
+        save_processor(self.processing_class, checkpoint_dir)
+        student.cohere.generation_config.save_pretrained(checkpoint_dir)
+        shutil.copyfile(Path(__file__).with_name("model.py"), checkpoint_dir / "model.py")
 
     def _load_from_checkpoint(self, resume_from_checkpoint: str, model=None) -> None:
         """Restore student weights; Trainer restores the optimizer and training step."""
