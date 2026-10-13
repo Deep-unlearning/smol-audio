@@ -1,0 +1,14 @@
+torch>=2.11
+# The encoder conversion uses this version's streaming encoder internals.
+transformers==5.14.1
+huggingface_hub
+safetensors
+numpy
+soundfile
+librosa
+datasets>=4
+accelerate
+jiwer
+trackio
+pyarrow
+matplotlib
